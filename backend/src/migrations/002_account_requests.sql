@@ -1,3 +1,10 @@
+/*
+=================================================
+MIGRATION 002
+ACCOUNT REQUESTS
+=================================================
+*/
+
 CREATE TABLE IF NOT EXISTS account_requests (
     id SERIAL PRIMARY KEY,
 
@@ -28,7 +35,8 @@ CREATE TABLE IF NOT EXISTS account_requests (
     initial_deposit NUMERIC(12,2) NOT NULL
         CHECK (initial_deposit >= 1000.00),
 
-    status VARCHAR(30) NOT NULL DEFAULT 'PENDING REVIEW'
+    status VARCHAR(30) NOT NULL
+        DEFAULT 'PENDING REVIEW'
         CHECK (
             status IN (
                 'PENDING REVIEW',
@@ -39,11 +47,14 @@ CREATE TABLE IF NOT EXISTS account_requests (
         ),
 
     created_by INTEGER
-        REFERENCES users(id),
+        REFERENCES users(id)
+        ON DELETE SET NULL,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 CREATE TABLE IF NOT EXISTS account_request_documents (
     id SERIAL PRIMARY KEY,
@@ -53,12 +64,14 @@ CREATE TABLE IF NOT EXISTS account_request_documents (
         ON DELETE CASCADE,
 
     document_type VARCHAR(50) NOT NULL,
+
     document_url TEXT,
 
     verified BOOLEAN NOT NULL DEFAULT FALSE,
 
     verified_by INTEGER
-        REFERENCES users(id),
+        REFERENCES users(id)
+        ON DELETE SET NULL,
 
     verified_at TIMESTAMP,
 
@@ -66,47 +79,11 @@ CREATE TABLE IF NOT EXISTS account_request_documents (
 );
 
 
-CREATE TABLE IF NOT EXISTS clients (
-    id SERIAL PRIMARY KEY,
+CREATE INDEX IF NOT EXISTS idx_account_requests_prospect_id
+ON account_requests(prospect_id);
 
-    account_number VARCHAR(20) NOT NULL UNIQUE,
+CREATE INDEX IF NOT EXISTS idx_account_requests_status
+ON account_requests(status);
 
-    prospect_id INTEGER NOT NULL UNIQUE,
-
-    account_request_id INTEGER NOT NULL UNIQUE,
-
-    assigned_to INTEGER NOT NULL,
-
-    balance NUMERIC(15, 2) NOT NULL DEFAULT 0,
-
-    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
-
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT fk_clients_prospect
-        FOREIGN KEY (prospect_id)
-        REFERENCES prospects(id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT fk_clients_account_request
-        FOREIGN KEY (account_request_id)
-        REFERENCES account_requests(id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT fk_clients_assigned_to
-        FOREIGN KEY (assigned_to)
-        REFERENCES users(id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT clients_status_check
-        CHECK (
-            status IN (
-                'ACTIVE',
-                'INACTIVE',
-                'SUSPENDED',
-                'CLOSED'
-            )
-        )
-);
+CREATE INDEX IF NOT EXISTS idx_account_request_documents_request_id
+ON account_request_documents(request_id);

@@ -1,87 +1,82 @@
 import fs from "fs";
 import path from "path";
-import { Client } from "pg";
+import { fileURLToPath } from "url";
+import pool from "../models/db.js";
 
-const client = new Client({
-  connectionString: process.env.DB_URL,
-});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function migrate() {
-  await client.connect();
+  const client = await pool.connect();
 
-  console.log("Connected to database");
+  try {
+    console.log("Connected to database");
 
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      id SERIAL PRIMARY KEY,
-      filename VARCHAR(255) UNIQUE NOT NULL,
-      executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+    // Create migration tracking table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id SERIAL PRIMARY KEY,
+        filename VARCHAR(255) UNIQUE NOT NULL,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  const migrationsPath = path.resolve(
-    process.cwd(),
-    "../database/migrations"
-  );
+    // Migrations are in the same folder as migrate.ts
+    const migrationsDir = __dirname;
 
-  const files = fs
-    .readdirSync(migrationsPath)
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
 
-  for (const file of files) {
-    const result = await client.query(
-      `
-      SELECT id
-      FROM schema_migrations
-      WHERE filename = $1
-      `,
-      [file]
-    );
+    console.log("Migration files:", files);
 
-    if (result.rows.length > 0) {
-      console.log(`Already executed: ${file}`);
-      continue;
-    }
-
-    console.log(`Running migration: ${file}`);
-
-    const sql = fs.readFileSync(
-      path.join(migrationsPath, file),
-      "utf8"
-    );
-
-    try {
-      await client.query("BEGIN");
-
-      await client.query(sql);
-
-      await client.query(
-        `
-        INSERT INTO schema_migrations (filename)
-        VALUES ($1)
-        `,
+    for (const file of files) {
+      const result = await client.query(
+        `SELECT 1 FROM schema_migrations WHERE filename = $1`,
         [file]
       );
 
-      await client.query("COMMIT");
+      if (result.rows.length > 0) {
+        console.log(`Already applied: ${file}`);
+        continue;
+      }
 
-      console.log(`Migration completed: ${file}`);
-    } catch (error) {
-      await client.query("ROLLBACK");
+      console.log(`Applying migration: ${file}`);
 
-      console.error(`Migration failed: ${file}`);
+      const sql = fs.readFileSync(
+        path.join(migrationsDir, file),
+        "utf8"
+      );
 
-      throw error;
+      await client.query("BEGIN");
+
+      try {
+        await client.query(sql);
+
+        await client.query(
+          `INSERT INTO schema_migrations (filename)
+           VALUES ($1)`,
+          [file]
+        );
+
+        await client.query("COMMIT");
+
+        console.log(`Migration applied successfully: ${file}`);
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
     }
+
+    console.log("All migrations completed successfully.");
+  } catch (error) {
+    console.error("Migration error:", error);
+    process.exitCode = 1;
+  } finally {
+    client.release();
+    await pool.end();
   }
-
-  await client.end();
-
-  console.log("All migrations completed");
 }
 
-migrate().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+migrate();

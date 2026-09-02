@@ -1,17 +1,33 @@
+/*
+=================================================
+MIGRATION 001
+INITIAL CRM SCHEMA
+=================================================
+*/
+
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
+
     email VARCHAR(255) UNIQUE NOT NULL,
+
     password VARCHAR(255) NOT NULL,
+
     role VARCHAR(20) NOT NULL
         CHECK (role IN ('AGENT', 'MANAGER')),
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
 CREATE TABLE IF NOT EXISTS prospects (
     id SERIAL PRIMARY KEY,
+
     first_name VARCHAR(100) NOT NULL,
+
     last_name VARCHAR(100) NOT NULL,
+
     email VARCHAR(255) UNIQUE NOT NULL,
+
     phone VARCHAR(30) NOT NULL,
 
     source VARCHAR(30) NOT NULL
@@ -39,6 +55,7 @@ CREATE TABLE IF NOT EXISTS prospects (
         ),
 
     estimated_capital NUMERIC,
+
     notes TEXT,
 
     status VARCHAR(30) DEFAULT 'NEW'
@@ -65,8 +82,10 @@ CREATE TABLE IF NOT EXISTS prospects (
     last_contact_date TIMESTAMP,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 CREATE TABLE IF NOT EXISTS clients (
     id SERIAL PRIMARY KEY,
@@ -76,13 +95,17 @@ CREATE TABLE IF NOT EXISTS clients (
         ON DELETE SET NULL,
 
     first_name VARCHAR(100) NOT NULL,
+
     last_name VARCHAR(100) NOT NULL,
 
     email VARCHAR(255) UNIQUE NOT NULL,
+
     phone VARCHAR(30),
 
     account_number VARCHAR(30) UNIQUE,
+
     account_type VARCHAR(30),
+
     trading_experience VARCHAR(30),
 
     initial_deposit NUMERIC
@@ -90,7 +113,8 @@ CREATE TABLE IF NOT EXISTS clients (
 
     balance NUMERIC DEFAULT 0,
 
-    status VARCHAR(20) DEFAULT 'ACTIVE'
+    status VARCHAR(20)
+        DEFAULT 'ACTIVE'
         CHECK (
             status IN (
                 'ACTIVE',
@@ -104,8 +128,10 @@ CREATE TABLE IF NOT EXISTS clients (
         ON DELETE SET NULL,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 CREATE TABLE IF NOT EXISTS interactions (
     id SERIAL PRIMARY KEY,
@@ -147,6 +173,7 @@ CREATE TABLE IF NOT EXISTS interactions (
         ),
 
     next_action TEXT,
+
     next_action_date DATE,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -164,6 +191,7 @@ CREATE TABLE IF NOT EXISTS interactions (
             )
         )
 );
+
 
 CREATE INDEX IF NOT EXISTS idx_prospects_assigned_to
 ON prospects(assigned_to);
