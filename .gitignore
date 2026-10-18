@@ -1,0 +1,10 @@
+node_modules/
+**/node_modules/
+.idea/
+.env
+.env.*
+!.env.example
+**/target/
+**/dist/
+**/build/
+uploads/
