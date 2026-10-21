@@ -1,16 +1,19 @@
 
 import { NavLink, useNavigate } from "react-router-dom";
 import "./Navbar.css";
-import { Link } from "react-router-dom";
 
 function Navbar() {
   const navigate = useNavigate();
-  const role = localStorage.getItem("role");
+
+  const role = (localStorage.getItem("role") || "")
+    .replace(/^ROLE_/, "")
+    .toUpperCase();
 
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
     localStorage.removeItem("email");
+
     navigate("/login", { replace: true });
   };
 
@@ -29,21 +32,16 @@ function Navbar() {
           Prospects
         </NavLink>
 
-        {role === "AGENT" && (
-          <NavLink to="/tasks">
-            Mes tâches
-          </NavLink>
-        )}
+        <NavLink to="/account-requests">
+          Demandes de comptes
+        </NavLink>
 
-        {role === "MANAGER" && (
-          <NavLink to="/manager">
-            Gestion équipe
-          </NavLink>
-        )}
+        <NavLink to="/clients">
+          Clients
+        </NavLink>
 
-        <Link to="/account-requests">
-  Demandes de comptes
-</Link>
+
+       
 
         <button
           type="button"
@@ -52,9 +50,6 @@ function Navbar() {
         >
           Déconnexion
         </button>
-
-
-        
       </div>
     </nav>
   );

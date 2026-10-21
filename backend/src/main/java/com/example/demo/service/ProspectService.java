@@ -1,3 +1,4 @@
+
 package com.example.demo.service;
 
 import com.example.demo.dto.ProspectRequest;
@@ -59,6 +60,8 @@ public class ProspectService {
         prospect.setInterest(request.getInterest());
         prospect.setEstimatedCapital(request.getEstimatedCapital());
         prospect.setNotes(request.getNotes());
+
+        // A new prospect always starts with NEW.
         prospect.setStatus(ProspectStatus.NEW);
         prospect.setAssignedTo(currentUser);
 
@@ -181,6 +184,11 @@ public class ProspectService {
         prospect.setInterest(request.getInterest());
         prospect.setEstimatedCapital(request.getEstimatedCapital());
         prospect.setNotes(request.getNotes());
+
+        // Update status only when the request contains one.
+        if (request.getStatus() != null) {
+            prospect.setStatus(request.getStatus());
+        }
 
         Prospect updatedProspect = prospectRepository.save(prospect);
 

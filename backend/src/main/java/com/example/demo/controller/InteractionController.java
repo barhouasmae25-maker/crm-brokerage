@@ -1,3 +1,4 @@
+
 package com.example.demo.controller;
 
 import com.example.demo.dto.InteractionRequest;
@@ -5,6 +6,7 @@ import com.example.demo.dto.InteractionResponse;
 import com.example.demo.service.InteractionService;
 
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +26,7 @@ public class InteractionController {
 
     // POST /api/prospects/{prospectId}/interactions
     @PostMapping("/prospects/{prospectId}/interactions")
+    @ResponseStatus(HttpStatus.CREATED)
     public InteractionResponse createProspectInteraction(
             @PathVariable Long prospectId,
             @Valid @RequestBody InteractionRequest request,
@@ -44,6 +47,33 @@ public class InteractionController {
     ) {
         return interactionService.getProspectInteractions(
                 prospectId,
+                authentication
+        );
+    }
+
+    // POST /api/clients/{clientId}/interactions
+    @PostMapping("/clients/{clientId}/interactions")
+    @ResponseStatus(HttpStatus.CREATED)
+    public InteractionResponse createClientInteraction(
+            @PathVariable Long clientId,
+            @Valid @RequestBody InteractionRequest request,
+            Authentication authentication
+    ) {
+        return interactionService.createClientInteraction(
+                clientId,
+                request,
+                authentication
+        );
+    }
+
+    // GET /api/clients/{clientId}/interactions
+    @GetMapping("/clients/{clientId}/interactions")
+    public List<InteractionResponse> getClientInteractions(
+            @PathVariable Long clientId,
+            Authentication authentication
+    ) {
+        return interactionService.getClientInteractions(
+                clientId,
                 authentication
         );
     }

@@ -1,5 +1,7 @@
+
 package com.example.demo.repository;
 
+import com.example.demo.entity.Client;
 import com.example.demo.entity.Interaction;
 import com.example.demo.entity.Prospect;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,5 +13,9 @@ public interface InteractionRepository
 
     List<Interaction> findByProspectOrderByCreatedAtDesc(
             Prospect prospect
+    );
+
+    List<Interaction> findByClientOrderByCreatedAtDesc(
+            Client client
     );
 }

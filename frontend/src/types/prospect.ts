@@ -46,4 +46,6 @@ export interface ProspectRequest {
   interest: ProspectInterest;
   estimatedCapital?: number;
   notes?: string;
+  status?: ProspectStatus;
 }
+

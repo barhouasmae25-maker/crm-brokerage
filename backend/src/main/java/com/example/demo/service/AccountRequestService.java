@@ -1,4 +1,3 @@
-
 package com.example.demo.service;
 
 import com.example.demo.dto.AccountRequestCreateRequest;
@@ -25,15 +24,18 @@ public class AccountRequestService {
     private final AccountRequestRepository requestRepository;
     private final AccountRequestDocumentRepository documentRepository;
     private final ProspectRepository prospectRepository;
+    private final ClientService clientService;
 
     public AccountRequestService(
             AccountRequestRepository requestRepository,
             AccountRequestDocumentRepository documentRepository,
-            ProspectRepository prospectRepository
+            ProspectRepository prospectRepository,
+            ClientService clientService
     ) {
         this.requestRepository = requestRepository;
         this.documentRepository = documentRepository;
         this.prospectRepository = prospectRepository;
+        this.clientService = clientService;
     }
 
     @Transactional
@@ -141,9 +143,7 @@ public class AccountRequestService {
         List<AccountRequest> requests = isManager(authentication)
                 ? requestRepository.findAllByOrderByCreatedAtDesc()
                 : requestRepository
-                .findByProspectAssignedToEmailOrderByCreatedAtDesc(
-                        email
-                );
+                .findByProspectAssignedToEmailOrderByCreatedAtDesc(email);
 
         return requests.stream()
                 .map(this::toResponse)
@@ -157,6 +157,7 @@ public class AccountRequestService {
     ) {
         AccountRequest request = getRequest(requestId);
         checkProspectAccess(request, authentication);
+
         return toResponse(request);
     }
 
@@ -187,6 +188,7 @@ public class AccountRequestService {
         }
 
         if (newStatus == AccountRequestStatus.APPROVED) {
+
             boolean identityVerified = request.getDocuments().stream()
                     .anyMatch(d -> d.isVerified()
                             && (d.getDocumentType()
@@ -221,7 +223,17 @@ public class AccountRequestService {
 
         prospectRepository.save(prospect);
 
-        return toResponse(requestRepository.save(request));
+        AccountRequest savedRequest = requestRepository.save(request);
+
+        // Automatically create a Client when the request is approved.
+        if (newStatus == AccountRequestStatus.APPROVED) {
+            clientService.createFromApprovedRequest(
+                    savedRequest.getId(),
+                    authentication
+            );
+        }
+
+        return toResponse(savedRequest);
     }
 
     @Transactional
@@ -258,7 +270,7 @@ public class AccountRequestService {
 
     /**
      * Returns a document only to the manager or the agent
-     * assigned to the prospect associated with this request.
+     * assigned to the associated prospect.
      */
     @Transactional
     public AccountRequestDocument getDocumentForDownload(
@@ -289,7 +301,10 @@ public class AccountRequestService {
                 ));
     }
 
-    private boolean isAssignedAgent(Prospect prospect, String email) {
+    private boolean isAssignedAgent(
+            Prospect prospect,
+            String email
+    ) {
         return prospect.getAssignedTo() != null
                 && prospect.getAssignedTo().getEmail() != null
                 && email.equalsIgnoreCase(
@@ -362,7 +377,9 @@ public class AccountRequestService {
         return authentication.getName();
     }
 
-    private AccountRequestResponse toResponse(AccountRequest request) {
+    private AccountRequestResponse toResponse(
+            AccountRequest request
+    ) {
         Prospect prospect = request.getProspect();
 
         List<AccountRequestResponse.DocumentResponse> documents =

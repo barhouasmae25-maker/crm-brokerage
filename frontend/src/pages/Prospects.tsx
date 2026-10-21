@@ -55,6 +55,7 @@ import type {
   ProspectRequest,
   ProspectSource,
   ProspectInterest,
+  ProspectStatus,
 } from "../types/prospect";
 
 import ProspectInteractions from "../components/ProspectInteractions";
@@ -77,7 +78,7 @@ const interests: ProspectInterest[] = [
   "MIXED",
 ];
 
-const statuses = [
+const statuses: ProspectStatus[] = [
   "NEW",
   "CONTACTED",
   "QUALIFIED",
@@ -96,6 +97,7 @@ const emptyForm: ProspectRequest = {
   interest: "MIXED",
   estimatedCapital: undefined,
   notes: "",
+  status: "NEW",
 };
 
 const formatLabel = (value?: string | null): string => {
@@ -242,10 +244,17 @@ export default function Prospects() {
     }
   };
 
+  const handleStatusChange = (event: SelectChangeEvent) => {
+    setForm((previous) => ({
+      ...previous,
+      status: event.target.value as ProspectStatus,
+    }));
+  };
+
   const handleOpenCreate = () => {
     setEditing(false);
     setSelectedProspect(null);
-    setForm({ ...emptyForm });
+    setForm({ ...emptyForm, status: "NEW" });
     setFormOpen(true);
   };
 
@@ -262,6 +271,7 @@ export default function Prospects() {
       interest: prospect.interest,
       estimatedCapital: prospect.estimatedCapital ?? undefined,
       notes: prospect.notes ?? "",
+      status: prospect.status,
     });
 
     setFormOpen(true);
@@ -316,6 +326,7 @@ export default function Prospects() {
         email: form.email.trim(),
         phone: form.phone.trim(),
         notes: form.notes?.trim() ?? "",
+        status: editing ? form.status : "NEW",
       };
 
       if (editing && selectedProspect) {
@@ -677,7 +688,10 @@ export default function Prospects() {
               />
 
               <FormControl fullWidth>
-                <InputLabel id="form-source-label">Source</InputLabel>
+                <InputLabel id="form-source-label">
+                  Source
+                </InputLabel>
+
                 <Select
                   name="source"
                   labelId="form-source-label"
@@ -694,7 +708,10 @@ export default function Prospects() {
               </FormControl>
 
               <FormControl fullWidth>
-                <InputLabel id="form-interest-label">Intérêt</InputLabel>
+                <InputLabel id="form-interest-label">
+                  Intérêt
+                </InputLabel>
+
                 <Select
                   name="interest"
                   labelId="form-interest-label"
@@ -705,6 +722,27 @@ export default function Prospects() {
                   {interests.map((interest) => (
                     <MenuItem key={interest} value={interest}>
                       {formatLabel(interest)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              {/* Le statut est modifiable uniquement en édition */}
+              <FormControl fullWidth disabled={!editing}>
+                <InputLabel id="form-status-label">
+                  Statut
+                </InputLabel>
+
+                <Select
+                  name="status"
+                  labelId="form-status-label"
+                  label="Statut"
+                  value={form.status ?? "NEW"}
+                  onChange={handleStatusChange}
+                >
+                  {statuses.map((status) => (
+                    <MenuItem key={status} value={status}>
+                      {formatLabel(status)}
                     </MenuItem>
                   ))}
                 </Select>
@@ -737,7 +775,11 @@ export default function Prospects() {
               Annuler
             </Button>
 
-            <Button type="submit" variant="contained" disabled={saving}>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={saving}
+            >
               {saving
                 ? "Enregistrement..."
                 : editing
@@ -812,7 +854,6 @@ export default function Prospects() {
 
               <Divider sx={{ my: 3 }} />
 
-              {/* Intégration du composant interactions */}
               <ProspectInteractions
                 prospectId={selectedProspect.id}
               />
@@ -845,7 +886,9 @@ export default function Prospects() {
             </Typography>
 
             <FormControl fullWidth>
-              <InputLabel id="agent-select-label">Agent</InputLabel>
+              <InputLabel id="agent-select-label">
+                Agent
+              </InputLabel>
 
               <Select
                 labelId="agent-select-label"
@@ -856,7 +899,10 @@ export default function Prospects() {
                 }
               >
                 {agents.map((agent) => (
-                  <MenuItem key={agent.id} value={String(agent.id)}>
+                  <MenuItem
+                    key={agent.id}
+                    value={String(agent.id)}
+                  >
                     {agent.email}
                   </MenuItem>
                 ))}

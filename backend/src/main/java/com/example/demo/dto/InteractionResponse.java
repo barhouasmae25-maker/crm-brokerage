@@ -1,3 +1,4 @@
+
 package com.example.demo.dto;
 
 import com.example.demo.entity.Interaction;
@@ -31,7 +32,9 @@ public record InteractionResponse(
                 interaction.getProspect() != null
                         ? interaction.getProspect().getId()
                         : null,
-                null,
+                interaction.getClient() != null
+                        ? interaction.getClient().getId()
+                        : null,
                 interaction.getCreatedBy() != null
                         ? interaction.getCreatedBy().getId()
                         : null

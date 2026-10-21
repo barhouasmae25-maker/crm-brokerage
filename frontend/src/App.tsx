@@ -11,6 +11,7 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Prospects from "./pages/Prospects";
 import AccountRequests from "./pages/AccountRequests";
+import Clients from "./pages/Clients";
 import MainLayout from "./components/MainLayout";
 
 function ProtectedLayout() {
@@ -27,42 +28,21 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Page d'accueil */}
         <Route
           path="/"
           element={<Navigate to="/login" replace />}
         />
 
-        {/* Authentification */}
-        <Route
-          path="/login"
-          element={<Login />}
-        />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
-        <Route
-          path="/register"
-          element={<Register />}
-        />
-
-        {/* Pages protégées : utilisateur connecté */}
         <Route element={<ProtectedLayout />}>
-          <Route
-            path="/dashboard"
-            element={<Dashboard />}
-          />
-
-          <Route
-            path="/prospects"
-            element={<Prospects />}
-          />
-
-          <Route
-            path="/account-requests"
-            element={<AccountRequests />}
-          />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/prospects" element={<Prospects />} />
+          <Route path="/account-requests" element={<AccountRequests />} />
+          <Route path="/clients" element={<Clients />} />
         </Route>
 
-        {/* Route inconnue */}
         <Route
           path="*"
           element={<Navigate to="/dashboard" replace />}
