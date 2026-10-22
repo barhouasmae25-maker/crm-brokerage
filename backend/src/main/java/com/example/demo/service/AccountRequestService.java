@@ -1,3 +1,4 @@
+
 package com.example.demo.service;
 
 import com.example.demo.dto.AccountRequestCreateRequest;
@@ -52,7 +53,8 @@ public class AccountRequestService {
             );
         }
 
-        if (dto.getDocuments() == null) {
+        if (dto.getDocuments() == null
+                || dto.getDocuments().isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Documents are required"
@@ -113,11 +115,31 @@ public class AccountRequestService {
                 : dto.getDocuments()) {
 
             if (input.getDocumentType() == null
-                    || input.getDocumentUrl() == null
-                    || input.getDocumentUrl().isBlank()) {
+                    || input.getFileName() == null
+                    || input.getFileName().isBlank()) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        "Each document must have a type and URL"
+                        "Each document must have a type and file name"
+                );
+            }
+
+            String fileName = input.getFileName().trim();
+
+            // Accept only a file name, never a path or an uploaded file.
+            if (fileName.contains("/")
+                    || fileName.contains("\\")
+                    || fileName.equals(".")
+                    || fileName.equals("..")) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Provide a file name only, without a path"
+                );
+            }
+
+            if (fileName.length() > 255) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "File name must not exceed 255 characters"
                 );
             }
 
@@ -125,8 +147,7 @@ public class AccountRequestService {
                     new AccountRequestDocument();
 
             document.setDocumentType(input.getDocumentType());
-            document.setDocumentUrl(input.getDocumentUrl().trim());
-
+            document.setFileName(fileName);
             request.addDocument(document);
         }
 
@@ -157,7 +178,6 @@ public class AccountRequestService {
     ) {
         AccountRequest request = getRequest(requestId);
         checkProspectAccess(request, authentication);
-
         return toResponse(request);
     }
 
@@ -188,7 +208,6 @@ public class AccountRequestService {
         }
 
         if (newStatus == AccountRequestStatus.APPROVED) {
-
             boolean identityVerified = request.getDocuments().stream()
                     .anyMatch(d -> d.isVerified()
                             && (d.getDocumentType()
@@ -222,10 +241,8 @@ public class AccountRequestService {
         }
 
         prospectRepository.save(prospect);
-
         AccountRequest savedRequest = requestRepository.save(request);
 
-        // Automatically create a Client when the request is approved.
         if (newStatus == AccountRequestStatus.APPROVED) {
             clientService.createFromApprovedRequest(
                     savedRequest.getId(),
@@ -268,43 +285,7 @@ public class AccountRequestService {
         return toResponse(request);
     }
 
-    /**
-     * Returns a document only to the manager or the agent
-     * assigned to the associated prospect.
-     */
-    @Transactional
-    public AccountRequestDocument getDocumentForDownload(
-            Long requestId,
-            Long documentId,
-            Authentication authentication
-    ) {
-        String email = requireAuthenticatedEmail(authentication);
-
-        AccountRequest request = getRequest(requestId);
-        Prospect prospect = request.getProspect();
-
-        boolean manager = isManager(authentication);
-        boolean assignedAgent = isAssignedAgent(prospect, email);
-
-        if (!manager && !assignedAgent) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "You cannot download this document"
-            );
-        }
-
-        return documentRepository
-                .findByIdAndAccountRequestId(documentId, requestId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Document not found"
-                ));
-    }
-
-    private boolean isAssignedAgent(
-            Prospect prospect,
-            String email
-    ) {
+    private boolean isAssignedAgent(Prospect prospect, String email) {
         return prospect.getAssignedTo() != null
                 && prospect.getAssignedTo().getEmail() != null
                 && email.equalsIgnoreCase(
@@ -388,7 +369,7 @@ public class AccountRequestService {
                                 new AccountRequestResponse.DocumentResponse(
                                         document.getId(),
                                         document.getDocumentType(),
-                                        document.getDocumentUrl(),
+                                        document.getFileName(),
                                         document.isVerified(),
                                         document.getVerifiedAt()
                                 )

@@ -1,3 +1,4 @@
+
 package com.example.demo.entity;
 
 import jakarta.persistence.*;
@@ -19,8 +20,9 @@ public class AccountRequestDocument {
     @Column(name = "document_type", nullable = false)
     private AccountDocumentType documentType;
 
-    @Column(name = "document_url", nullable = false, length = 2048)
-    private String documentUrl;
+    // Nom simulé uniquement, aucun fichier n'est stocké.
+    @Column(name = "file_name", nullable = false, length = 255)
+    private String fileName;
 
     @Column(name = "verified", nullable = false)
     private boolean verified = false;
@@ -48,12 +50,12 @@ public class AccountRequestDocument {
         this.documentType = documentType;
     }
 
-    public String getDocumentUrl() {
-        return documentUrl;
+    public String getFileName() {
+        return fileName;
     }
 
-    public void setDocumentUrl(String documentUrl) {
-        this.documentUrl = documentUrl;
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
     }
 
     public boolean isVerified() {

@@ -42,6 +42,7 @@ export type AccountDocumentType =
 
 export interface AccountRequestDocumentInput {
   documentType: AccountDocumentType;
+  fileName: string;
 }
 
 export interface AccountRequestCreate {
@@ -55,7 +56,7 @@ export interface AccountRequestCreate {
 export interface AccountRequestDocument {
   id: number;
   documentType: AccountDocumentType;
-  documentUrl: string;
+  fileName: string;
   verified: boolean;
   verifiedAt?: string | null;
 }
@@ -110,28 +111,15 @@ export async function getAccountRequestById(
 }
 
 /**
- * Créer une demande avec les documents d'identité et de domicile.
+ * Créer une demande avec des noms de documents simulés.
+ * Aucun fichier réel n'est envoyé au backend.
  */
 export async function createAccountRequest(
-  data: AccountRequestCreate,
-  identityFile: File,
-  addressFile: File
+  data: AccountRequestCreate
 ): Promise<AccountRequest> {
-  const formData = new FormData();
-
-  formData.append(
-    "request",
-    new Blob([JSON.stringify(data)], {
-      type: "application/json",
-    })
-  );
-
-  formData.append("identityDocument", identityFile);
-  formData.append("addressDocument", addressFile);
-
   const response = await api.post<AccountRequest>(
     "/api/account-requests",
-    formData
+    data
   );
 
   return response.data;
@@ -154,7 +142,7 @@ export async function updateAccountRequestStatus(
 }
 
 /**
- * Vérifier un document.
+ * Vérifier un document simulé.
  * Réservé au MANAGER selon les règles du backend.
  */
 export async function verifyAccountRequestDocument(
@@ -163,25 +151,6 @@ export async function verifyAccountRequestDocument(
 ): Promise<AccountRequest> {
   const response = await api.put<AccountRequest>(
     `/api/account-requests/${requestId}/documents/${documentId}/verify`
-  );
-
-  return response.data;
-}
-
-/**
- * Télécharger un document de manière sécurisée.
- * Le backend doit exposer :
- * GET /api/account-requests/{requestId}/documents/{documentId}/download
- */
-export async function downloadAccountRequestDocument(
-  requestId: number,
-  documentId: number
-): Promise<Blob> {
-  const response = await api.get<Blob>(
-    `/api/account-requests/${requestId}/documents/${documentId}/download`,
-    {
-      responseType: "blob",
-    }
   );
 
   return response.data;

@@ -10,12 +10,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   FormControl,
   InputLabel,
   MenuItem,
   Paper,
   Select,
-  Stack,
+  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -23,12 +24,7 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Typography,
 } from "@mui/material";
-
-import type { SelectChangeEvent } from "@mui/material/Select";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
-import DownloadIcon from "@mui/icons-material/Download";
 
 import {
   createAccountRequest,
@@ -36,7 +32,6 @@ import {
   getAccountRequestById,
   updateAccountRequestStatus,
   verifyAccountRequestDocument,
-  downloadAccountRequestDocument,
 } from "../services/accountRequestService";
 
 import type {
@@ -51,14 +46,16 @@ import type {
 import { getProspects } from "../services/prospectService";
 import type { Prospect } from "../types/prospect";
 
-type RequestDetails = AccountRequest & {
-  prospectName?: string;
-  prospectFirstName?: string;
-  prospectLastName?: string;
-  prospectEmail?: string;
-};
+interface RequestNote {
+  id: number;
+  content: string;
+  createdAt: string;
+  accountRequestId: number;
+  createdById?: number;
+  createdByEmail?: string;
+}
 
-const STATUSES: AccountRequestStatus[] = [
+const STATUS_OPTIONS: AccountRequestStatus[] = [
   "PENDING_REVIEW",
   "UNDER_REVIEW",
   "APPROVED",
@@ -79,25 +76,39 @@ const EXPERIENCES: TradingExperience[] = [
   "PROFESSIONAL",
 ];
 
-const initialForm = {
-  prospectId: "",
-  accountType: "INDIVIDUAL" as AccountType,
-  tradingExperience: "BEGINNER" as TradingExperience,
-  initialDeposit: "1000",
-  identityType: "ID_CARD" as AccountDocumentType,
+const DOCUMENT_TYPES: AccountDocumentType[] = [
+  "ID_CARD",
+  "PASSPORT",
+  "PROOF_OF_ADDRESS",
+];
+
+const initialForm: AccountRequestCreate = {
+  prospectId: 0,
+  accountType: "INDIVIDUAL",
+  tradingExperience: "BEGINNER",
+  initialDeposit: 1000,
+  documents: [
+    {
+      documentType: "ID_CARD",
+      fileName: "cin.pdf",
+    },
+    {
+      documentType: "PROOF_OF_ADDRESS",
+      fileName: "justificatif_domicile.pdf",
+    },
+  ],
 };
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
-
-function formatLabel(value?: string | null): string {
+function labelOf(value?: string): string {
   if (!value) return "—";
 
   return value
-    .replace(/_/g, " ")
     .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .split("_")
+    .map(
+      (word) => word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join(" ");
 }
 
 function formatDate(value?: string | null): string {
@@ -105,14 +116,14 @@ function formatDate(value?: string | null): string {
 
   const date = new Date(value);
 
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("fr-FR");
 }
 
-function getStatusColor(
-  status: AccountRequestStatus
-): "default" | "warning" | "info" | "success" | "error" {
+function statusColor(
+  status?: AccountRequestStatus,
+): "default" | "warning" | "success" | "error" | "info" {
   switch (status) {
     case "PENDING_REVIEW":
       return "warning";
@@ -127,7 +138,7 @@ function getStatusColor(
   }
 }
 
-function getProspectName(request: RequestDetails): string {
+function getProspectName(request: AccountRequest): string {
   const name = [
     request.prospectFirstName,
     request.prospectLastName,
@@ -138,43 +149,100 @@ function getProspectName(request: RequestDetails): string {
   return (
     name ||
     request.prospectName ||
+    request.prospectEmail ||
     `Prospect #${request.prospectId}`
   );
 }
 
-function validateFile(file: File): string | null {
-  const extension = file.name
-    .slice(file.name.lastIndexOf("."))
-    .toLowerCase();
+function isValidFileName(fileName: string): boolean {
+  const name = fileName.trim();
 
-  if (!ALLOWED_EXTENSIONS.includes(extension)) {
-    return "Formats autorisés : PDF, JPG et PNG.";
+  return (
+    name.length > 0 &&
+    name.length <= 255 &&
+    !/[\\/]/.test(name) &&
+    !name.includes("..")
+  );
+}
+
+function getUserRole(): string {
+  return (localStorage.getItem("role") || "")
+    .replace(/^ROLE_/, "")
+    .toUpperCase();
+}
+
+function getToken(): string {
+  return localStorage.getItem("token") || "";
+}
+
+async function fetchNotes(
+  requestId: number,
+): Promise<RequestNote[]> {
+  const token = getToken();
+
+  const response = await fetch(
+    `http://localhost:8080/api/account-requests/${requestId}/notes`,
+    {
+      method: "GET",
+      headers: {
+        ...(token
+          ? { Authorization: `Bearer ${token}` }
+          : {}),
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      message || `Erreur HTTP ${response.status}`,
+    );
   }
 
-  if (file.size === 0) {
-    return "Le fichier est vide.";
-  }
+  return response.json() as Promise<RequestNote[]>;
+}
 
-  if (file.size > MAX_FILE_SIZE) {
-    return "Chaque document doit avoir une taille maximale de 5 MB.";
-  }
+async function postNote(
+  requestId: number,
+  content: string,
+): Promise<void> {
+  const token = getToken();
 
-  return null;
+  const response = await fetch(
+    `http://localhost:8080/api/account-requests/${requestId}/notes`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token
+          ? { Authorization: `Bearer ${token}` }
+          : {}),
+      },
+      body: JSON.stringify({ content }),
+    },
+  );
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      message || `Erreur HTTP ${response.status}`,
+    );
+  }
 }
 
 export default function AccountRequests() {
-  const role = (localStorage.getItem("role") || "")
-    .replace(/^ROLE_/, "")
-    .toUpperCase();
-
-  const isManager = role === "MANAGER";
+  const isManager = getUserRole() === "MANAGER";
 
   const [requests, setRequests] = useState<AccountRequest[]>([]);
   const [prospects, setProspects] = useState<Prospect[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<AccountRequestStatus | "ALL">("ALL");
@@ -183,13 +251,32 @@ export default function AccountRequests() {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const [selectedRequest, setSelectedRequest] =
-    useState<RequestDetails | null>(null);
+    useState<AccountRequest | null>(null);
+
+  const [form, setForm] = useState<AccountRequest>({
+    id: 0,
+    prospectId: 0,
+    accountType: "INDIVIDUAL",
+    tradingExperience: "BEGINNER",
+    initialDeposit: 1000,
+    status: "PENDING_REVIEW",
+    documents: [],
+  });
+
+  const [formData, setFormData] =
+    useState<AccountRequestCreate>({
+      ...initialForm,
+      documents: initialForm.documents.map((doc) => ({ ...doc })),
+    });
 
   const [reviewComment, setReviewComment] = useState("");
-  const [form, setForm] = useState(initialForm);
+  const [nextStatus, setNextStatus] =
+    useState<AccountRequestStatus>("UNDER_REVIEW");
 
-  const [identityFile, setIdentityFile] = useState<File | null>(null);
-  const [addressFile, setAddressFile] = useState<File | null>(null);
+  const [notes, setNotes] = useState<RequestNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [noteContent, setNoteContent] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -198,15 +285,16 @@ export default function AccountRequests() {
     try {
       const [requestData, prospectData] = await Promise.all([
         getAccountRequests(),
-        getProspects({}),
+        getProspects(),
       ]);
 
       setRequests(requestData);
       setProspects(prospectData);
-    } catch (err) {
-      console.error("Load account requests error:", err);
+    } catch (e) {
       setError(
-        "Impossible de charger les demandes. Vérifiez le backend et vos autorisations."
+        e instanceof Error
+          ? e.message
+          : "Impossible de charger les demandes.",
       );
     } finally {
       setLoading(false);
@@ -218,471 +306,498 @@ export default function AccountRequests() {
   }, [loadData]);
 
   const filteredRequests = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
 
     return requests.filter((request) => {
-      const item = request as RequestDetails;
-
       const matchesStatus =
         statusFilter === "ALL" ||
         request.status === statusFilter;
 
-      const searchableText = [
-        request.id,
-        request.prospectId,
-        getProspectName(item),
-        item.prospectEmail,
-        request.accountType,
-        request.status,
-      ]
-        .join(" ")
-        .toLowerCase();
+      const matchesSearch =
+        !query ||
+        String(request.id).includes(query) ||
+        getProspectName(request).toLowerCase().includes(query) ||
+        (request.prospectEmail || "").toLowerCase().includes(query);
 
-      return matchesStatus && searchableText.includes(term);
+      return matchesStatus && matchesSearch;
     });
   }, [requests, search, statusFilter]);
 
-  const updateForm = <K extends keyof typeof initialForm>(
-    field: K,
-    value: (typeof initialForm)[K]
-  ) => {
-    setForm((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-  };
+  function resetForm() {
+    setFormData({
+      ...initialForm,
+      documents: initialForm.documents.map((doc) => ({ ...doc })),
+    });
+  }
 
-  const resetCreateForm = () => {
-    setForm(initialForm);
-    setIdentityFile(null);
-    setAddressFile(null);
-  };
-
-  const handleCreate = async () => {
+  function openCreateDialog() {
+    resetForm();
     setError("");
-    setSuccess("");
+    setCreateOpen(true);
+  }
 
-    const prospectId = Number(form.prospectId);
-    const initialDeposit = Number(form.initialDeposit);
+  function updateDocumentName(
+    documentType: AccountDocumentType,
+    fileName: string,
+  ) {
+    setFormData((previous) => ({
+      ...previous,
+      documents: previous.documents.some(
+        (doc) => doc.documentType === documentType,
+      )
+        ? previous.documents.map((doc) =>
+            doc.documentType === documentType
+              ? { ...doc, fileName }
+              : doc,
+          )
+        : [
+            ...previous.documents,
+            { documentType, fileName },
+          ],
+    }));
+  }
 
-    if (!form.prospectId || !Number.isInteger(prospectId)) {
+  async function handleCreate() {
+    setError("");
+
+    if (!formData.prospectId) {
       setError("Veuillez sélectionner un prospect.");
       return;
     }
 
-    if (!Number.isFinite(initialDeposit) || initialDeposit < 1000) {
-      setError("Le dépôt initial minimum est de 1000.");
+    if (
+      !Number.isFinite(formData.initialDeposit) ||
+      formData.initialDeposit < 1000
+    ) {
+      setError("Le dépôt initial doit être au minimum de 1000.");
       return;
     }
 
-    if (!identityFile || !addressFile) {
-      setError("Veuillez sélectionner les deux documents obligatoires.");
+    const identity = formData.documents.find(
+      (doc) =>
+        doc.documentType === "ID_CARD" ||
+        doc.documentType === "PASSPORT",
+    );
+
+    const address = formData.documents.find(
+      (doc) => doc.documentType === "PROOF_OF_ADDRESS",
+    );
+
+    if (
+      !identity ||
+      !address ||
+      !isValidFileName(identity.fileName) ||
+      !isValidFileName(address.fileName)
+    ) {
+      setError(
+        "Veuillez saisir un nom valide pour la pièce d'identité et le justificatif de domicile.",
+      );
       return;
     }
-
-    const identityError = validateFile(identityFile);
-    if (identityError) {
-      setError(`Document d'identité : ${identityError}`);
-      return;
-    }
-
-    const addressError = validateFile(addressFile);
-    if (addressError) {
-      setError(`Justificatif de domicile : ${addressError}`);
-      return;
-    }
-
-    const payload: AccountRequestCreate = {
-      prospectId,
-      accountType: form.accountType,
-      tradingExperience: form.tradingExperience,
-      initialDeposit,
-      documents: [
-        { documentType: form.identityType },
-        { documentType: "PROOF_OF_ADDRESS" },
-      ],
-    };
 
     setSaving(true);
 
     try {
-      await createAccountRequest(
-        payload,
-        identityFile,
-        addressFile
-      );
+      const payload: AccountRequestCreate = {
+        prospectId: formData.prospectId,
+        accountType: formData.accountType,
+        tradingExperience: formData.tradingExperience,
+        initialDeposit: formData.initialDeposit,
+        documents: formData.documents.map((doc) => ({
+          documentType: doc.documentType,
+          fileName: doc.fileName.trim(),
+        })),
+      };
+
+      await createAccountRequest(payload);
 
       setCreateOpen(false);
-      resetCreateForm();
-      setSuccess("La demande a été créée avec succès.");
-
+      setSuccess("Demande créée avec succès.");
       await loadData();
-    } catch (err) {
-      console.error("Create account request error:", err);
+    } catch (e) {
       setError(
-        "Échec de création. Vérifiez les données, les fichiers et la configuration du backend."
+        e instanceof Error
+          ? e.message
+          : "Erreur lors de la création de la demande.",
       );
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const openDetails = async (requestId: number) => {
-    setError("");
-    setSuccess("");
+  async function loadNotes(requestId: number) {
+    setNotesLoading(true);
 
     try {
-      const data = await getAccountRequestById(requestId);
-
-      setSelectedRequest(data as RequestDetails);
-      setReviewComment(data.reviewComment || "");
-      setDetailsOpen(true);
-    } catch (err) {
-      console.error("Request details error:", err);
-      setError("Impossible de charger les détails de la demande.");
+      const data = await fetchNotes(requestId);
+      setNotes(data);
+    } catch (e) {
+      setNotes([]);
+      setError(
+        e instanceof Error
+          ? `Chargement des notes impossible : ${e.message}`
+          : "Chargement des notes impossible.",
+      );
+    } finally {
+      setNotesLoading(false);
     }
-  };
+  }
 
-  const refreshSelectedRequest = async (requestId: number) => {
-    const updated = await getAccountRequestById(requestId);
+  async function openDetails(request: AccountRequest) {
+    setError("");
+    setNotes([]);
+    setNoteContent("");
+    setDetailsOpen(true);
+    setSelectedRequest(request);
+    setReviewComment(request.reviewComment || "");
+    setNextStatus(request.status);
 
-    setSelectedRequest(updated as RequestDetails);
+    try {
+      const data = await getAccountRequestById(request.id);
+
+      setSelectedRequest(data);
+      setReviewComment(data.reviewComment || "");
+      setNextStatus(data.status);
+
+      if (isManager) {
+        await loadNotes(request.id);
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Impossible de charger les détails.",
+      );
+    }
+  }
+
+  async function refreshSelectedRequest() {
+    if (!selectedRequest) return;
+
+    const data = await getAccountRequestById(selectedRequest.id);
+
+    setSelectedRequest(data);
 
     setRequests((previous) =>
-      previous.map((item) =>
-        item.id === updated.id ? updated : item
-      )
+      previous.map((request) =>
+        request.id === data.id ? data : request,
+      ),
     );
-  };
+  }
 
-  const handleDownloadDocument = async (
-    requestId: number,
-    documentId: number,
-    documentType: string
-  ) => {
+  async function handleAddNote() {
+    if (!selectedRequest || !noteContent.trim()) {
+      setError("Veuillez saisir une note.");
+      return;
+    }
+
+    if (noteContent.trim().length > 5000) {
+      setError("La note ne doit pas dépasser 5000 caractères.");
+      return;
+    }
+
+    setNoteSaving(true);
     setError("");
 
     try {
-      const blob = await downloadAccountRequestDocument(
-        requestId,
-        documentId
-      );
+      await postNote(selectedRequest.id, noteContent.trim());
 
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-
-      link.href = url;
-      link.download = `${documentType.toLowerCase()}-${documentId}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Document download error:", err);
+      setNoteContent("");
+      await loadNotes(selectedRequest.id);
+      setSuccess("Note ajoutée avec succès.");
+    } catch (e) {
       setError(
-        "Impossible de télécharger le document. Vérifiez que le backend dispose de l'endpoint sécurisé de téléchargement."
+        e instanceof Error
+          ? e.message
+          : "Impossible d'ajouter la note.",
       );
+    } finally {
+      setNoteSaving(false);
     }
-  };
+  }
 
-  const handleVerifyDocument = async (documentId: number) => {
-    if (!selectedRequest || !isManager) return;
+  async function handleVerifyDocument(documentId: number) {
+    if (!selectedRequest) return;
 
-    setSaving(true);
+    setActionLoading(true);
     setError("");
-    setSuccess("");
 
     try {
       await verifyAccountRequestDocument(
         selectedRequest.id,
-        documentId
+        documentId,
       );
 
-      await refreshSelectedRequest(selectedRequest.id);
-      setSuccess("Le document a été vérifié.");
-    } catch (err) {
-      console.error("Document verification error:", err);
-      setError("Impossible de vérifier le document.");
+      await refreshSelectedRequest();
+      setSuccess("Document vérifié avec succès.");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Impossible de vérifier le document.",
+      );
     } finally {
-      setSaving(false);
+      setActionLoading(false);
     }
-  };
+  }
 
-  const handleStatusChange = async (
-    status: AccountRequestStatus
-  ) => {
-    if (!selectedRequest || !isManager) return;
+  async function handleStatusChange() {
+    if (!selectedRequest) return;
 
-    setSaving(true);
+    const documents = selectedRequest.documents || [];
+
+    const hasVerifiedIdentity = documents.some(
+      (doc) =>
+        (doc.documentType === "ID_CARD" ||
+          doc.documentType === "PASSPORT") &&
+        doc.verified,
+    );
+
+    const hasVerifiedAddress = documents.some(
+      (doc) =>
+        doc.documentType === "PROOF_OF_ADDRESS" &&
+        doc.verified,
+    );
+
+    if (
+      nextStatus === "APPROVED" &&
+      (!hasVerifiedIdentity || !hasVerifiedAddress)
+    ) {
+      setError(
+        "Impossible d'approuver la demande : vérifiez d'abord la pièce d'identité et le justificatif de domicile.",
+      );
+      return;
+    }
+
+    setActionLoading(true);
     setError("");
-    setSuccess("");
 
     try {
       await updateAccountRequestStatus(selectedRequest.id, {
-        status,
-        reviewComment: reviewComment.trim(),
+        status: nextStatus,
+        reviewComment,
       });
 
-      await refreshSelectedRequest(selectedRequest.id);
+      await refreshSelectedRequest();
       await loadData();
-
-      setSuccess(`Statut modifié : ${formatLabel(status)}.`);
-    } catch (err) {
-      console.error("Status update error:", err);
+      setSuccess("Statut de la demande mis à jour.");
+    } catch (e) {
       setError(
-        "Impossible de modifier le statut. Pour approuver, vérifiez que les documents obligatoires sont validés."
+        e instanceof Error
+          ? e.message
+          : "Impossible de modifier le statut.",
       );
     } finally {
-      setSaving(false);
+      setActionLoading(false);
     }
-  };
+  }
 
-  const isFinalStatus =
-    selectedRequest?.status === "APPROVED" ||
-    selectedRequest?.status === "REJECTED";
+  const selectedDocuments = selectedRequest?.documents || [];
 
-  const identityVerified =
-    selectedRequest?.documents?.some(
-      (document) =>
-        (document.documentType === "ID_CARD" ||
-          document.documentType === "PASSPORT") &&
-        document.verified
-    ) ?? false;
+  const hasVerifiedIdentity = selectedDocuments.some(
+    (doc) =>
+      (doc.documentType === "ID_CARD" ||
+        doc.documentType === "PASSPORT") &&
+      doc.verified,
+  );
 
-  const addressVerified =
-    selectedRequest?.documents?.some(
-      (document) =>
-        document.documentType === "PROOF_OF_ADDRESS" &&
-        document.verified
-    ) ?? false;
-
-  const canApprove = identityVerified && addressVerified;
+  const hasVerifiedAddress = selectedDocuments.some(
+    (doc) =>
+      doc.documentType === "PROOF_OF_ADDRESS" &&
+      doc.verified,
+  );
 
   return (
-    <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1500, mx: "auto" }}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
+    <Box sx={{ p: { xs: 2, md: 3 } }}>
+      <Box
         sx={{
-          mb: 3,
+          display: "flex",
           justifyContent: "space-between",
-          alignItems: { xs: "stretch", sm: "center" },
+          alignItems: "center",
+          gap: 2,
+          flexWrap: "wrap",
+          mb: 3,
         }}
       >
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700 }}>
-            Demandes de comptes
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Création, suivi et validation des demandes d'ouverture de compte.
-          </Typography>
+          <h2 style={{ margin: 0 }}>Demandes de comptes</h2>
+          <p style={{ color: "#666", marginBottom: 0 }}>
+            Gestion des demandes, documents et notes internes.
+          </p>
         </Box>
 
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-          <Button
-            variant="outlined"
-            disabled={loading}
-            onClick={() => void loadData()}
-          >
-            Actualiser
-          </Button>
-
-          <Button
-            variant="contained"
-            onClick={() => {
-              setError("");
-              setSuccess("");
-              resetCreateForm();
-              setCreateOpen(true);
-            }}
-          >
-            Nouvelle demande
-          </Button>
-        </Stack>
-      </Stack>
+        <Button variant="contained" onClick={openCreateDialog}>
+          Nouvelle demande
+        </Button>
+      </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setError("")}
+        >
           {error}
         </Alert>
       )}
 
-      {success && (
-        <Alert
-          severity="success"
-          sx={{ mb: 2 }}
-          onClose={() => setSuccess("")}
-        >
-          {success}
-        </Alert>
-      )}
-
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
           <TextField
             label="Rechercher"
-            placeholder="Nom, email ou ID..."
+            placeholder="ID, prospect ou email"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            fullWidth
+            sx={{ flex: 1, minWidth: 220 }}
           />
 
-          <FormControl sx={{ minWidth: { xs: "100%", md: 240 } }}>
-            <InputLabel id="status-filter-label">Statut</InputLabel>
+          <FormControl sx={{ minWidth: 220 }}>
+            <InputLabel id="request-status-filter">
+              Statut
+            </InputLabel>
             <Select
-              labelId="status-filter-label"
-              value={statusFilter}
+              labelId="request-status-filter"
               label="Statut"
-              onChange={(event: SelectChangeEvent) =>
+              value={statusFilter}
+              onChange={(event) =>
                 setStatusFilter(
-                  event.target.value as AccountRequestStatus | "ALL"
+                  event.target.value as AccountRequestStatus | "ALL",
                 )
               }
             >
               <MenuItem value="ALL">Tous les statuts</MenuItem>
-              {STATUSES.map((status) => (
+              {STATUS_OPTIONS.map((status) => (
                 <MenuItem key={status} value={status}>
-                  {formatLabel(status)}
+                  {labelOf(status)}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
-        </Stack>
-      </Paper>
 
-      <Paper>
-        {loading ? (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              p: 5,
-            }}
+          <Button
+            variant="outlined"
+            onClick={() => void loadData()}
           >
-            <CircularProgress />
-          </Box>
-        ) : (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>ID</TableCell>
-                  <TableCell>Prospect</TableCell>
-                  <TableCell>Type de compte</TableCell>
-                  <TableCell>Expérience</TableCell>
-                  <TableCell>Dépôt initial</TableCell>
-                  <TableCell>Statut</TableCell>
-                  <TableCell>Date de création</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-
-              <TableBody>
-                {filteredRequests.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} align="center">
-                      Aucune demande trouvée.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredRequests.map((request) => {
-                    const item = request as RequestDetails;
-
-                    return (
-                      <TableRow key={request.id} hover>
-                        <TableCell>{request.id}</TableCell>
-
-                        <TableCell>
-                          <Typography sx={{ fontWeight: 600 }}>
-                            {getProspectName(item)}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                          >
-                            {item.prospectEmail || "—"}
-                          </Typography>
-                        </TableCell>
-
-                        <TableCell>
-                          {formatLabel(request.accountType)}
-                        </TableCell>
-
-                        <TableCell>
-                          {formatLabel(request.tradingExperience)}
-                        </TableCell>
-
-                        <TableCell>
-                          {Number(
-                            request.initialDeposit
-                          ).toLocaleString()}
-                        </TableCell>
-
-                        <TableCell>
-                          <Chip
-                            size="small"
-                            label={formatLabel(request.status)}
-                            color={getStatusColor(request.status)}
-                          />
-                        </TableCell>
-
-                        <TableCell>
-                          {formatDate(request.createdAt)}
-                        </TableCell>
-
-                        <TableCell align="right">
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => void openDetails(request.id)}
-                          >
-                            Détails
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
+            Actualiser
+          </Button>
+        </Box>
       </Paper>
+
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>ID</TableCell>
+              <TableCell>Prospect</TableCell>
+              <TableCell>Type de compte</TableCell>
+              <TableCell>Dépôt initial</TableCell>
+              <TableCell>Statut</TableCell>
+              <TableCell>Date de création</TableCell>
+              <TableCell>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} align="center">
+                  <CircularProgress size={28} />
+                </TableCell>
+              </TableRow>
+            ) : filteredRequests.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} align="center">
+                  Aucune demande trouvée.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredRequests.map((request) => (
+                <TableRow key={request.id} hover>
+                  <TableCell>{request.id}</TableCell>
+                  <TableCell>
+                    <Box>
+                      <strong>{getProspectName(request)}</strong>
+                      <Box
+                        sx={{
+                          color: "text.secondary",
+                          fontSize: 12,
+                        }}
+                      >
+                        {request.prospectEmail || "—"}
+                      </Box>
+                    </Box>
+                  </TableCell>
+                  <TableCell>{labelOf(request.accountType)}</TableCell>
+                  <TableCell>
+                    {Number(request.initialDeposit).toLocaleString(
+                      "fr-FR",
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={labelOf(request.status)}
+                      color={statusColor(request.status)}
+                    />
+                  </TableCell>
+                  <TableCell>{formatDate(request.createdAt)}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="small"
+                      onClick={() => void openDetails(request)}
+                    >
+                      Détails
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {/* Création de la demande */}
       <Dialog
         open={createOpen}
-        onClose={() => {
-          if (!saving) setCreateOpen(false);
-        }}
+        onClose={() => !saving && setCreateOpen(false)}
         fullWidth
         maxWidth="sm"
       >
         <DialogTitle>Nouvelle demande de compte</DialogTitle>
 
         <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <FormControl fullWidth required>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              pt: 1,
+            }}
+          >
+            <FormControl fullWidth>
               <InputLabel id="prospect-select-label">
                 Prospect
               </InputLabel>
-
               <Select
                 labelId="prospect-select-label"
-                value={form.prospectId}
                 label="Prospect"
+                value={formData.prospectId || ""}
                 onChange={(event) =>
-                  updateForm("prospectId", event.target.value)
+                  setFormData((previous) => ({
+                    ...previous,
+                    prospectId: Number(event.target.value),
+                  }))
                 }
               >
                 {prospects.map((prospect) => (
-                  <MenuItem
-                    key={prospect.id}
-                    value={String(prospect.id)}
-                  >
-                    {prospect.firstName} {prospect.lastName} —{" "}
-                    {prospect.email}
+                  <MenuItem key={prospect.id} value={prospect.id}>
+                    {[
+                      prospect.firstName,
+                      prospect.lastName,
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || prospect.email}
+                    {prospect.email ? ` — ${prospect.email}` : ""}
                   </MenuItem>
                 ))}
               </Select>
@@ -692,21 +807,20 @@ export default function AccountRequests() {
               <InputLabel id="account-type-label">
                 Type de compte
               </InputLabel>
-
               <Select
                 labelId="account-type-label"
-                value={form.accountType}
                 label="Type de compte"
+                value={formData.accountType}
                 onChange={(event) =>
-                  updateForm(
-                    "accountType",
-                    event.target.value as AccountType
-                  )
+                  setFormData((previous) => ({
+                    ...previous,
+                    accountType: event.target.value as AccountType,
+                  }))
                 }
               >
                 {ACCOUNT_TYPES.map((type) => (
                   <MenuItem key={type} value={type}>
-                    {formatLabel(type)}
+                    {labelOf(type)}
                   </MenuItem>
                 ))}
               </Select>
@@ -716,151 +830,100 @@ export default function AccountRequests() {
               <InputLabel id="experience-label">
                 Expérience en trading
               </InputLabel>
-
               <Select
                 labelId="experience-label"
-                value={form.tradingExperience}
                 label="Expérience en trading"
+                value={formData.tradingExperience}
                 onChange={(event) =>
-                  updateForm(
-                    "tradingExperience",
-                    event.target.value as TradingExperience
-                  )
+                  setFormData((previous) => ({
+                    ...previous,
+                    tradingExperience:
+                      event.target.value as TradingExperience,
+                  }))
                 }
               >
                 {EXPERIENCES.map((experience) => (
                   <MenuItem key={experience} value={experience}>
-                    {formatLabel(experience)}
+                    {labelOf(experience)}
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
 
             <TextField
-              label="Dépôt initial (minimum 1000)"
+              label="Dépôt initial"
               type="number"
-              value={form.initialDeposit}
+              value={formData.initialDeposit}
               onChange={(event) =>
-                updateForm("initialDeposit", event.target.value)
+                setFormData((previous) => ({
+                  ...previous,
+                  initialDeposit: Number(event.target.value),
+                }))
               }
               slotProps={{
-                htmlInput: { min: 1000, step: 0.01 },
+                htmlInput: {
+                  min: 1000,
+                  step: 0.01,
+                },
               }}
-              required
+              helperText="Montant minimum : 1000"
               fullWidth
             />
 
-            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-              Documents obligatoires
-            </Typography>
-
-            <FormControl fullWidth>
-              <InputLabel id="identity-type-label">
-                Document d'identité
-              </InputLabel>
-
-              <Select
-                labelId="identity-type-label"
-                value={form.identityType}
-                label="Document d'identité"
-                onChange={(event) =>
-                  updateForm(
-                    "identityType",
-                    event.target.value as AccountDocumentType
-                  )
-                }
-              >
-                <MenuItem value="ID_CARD">Carte d'identité</MenuItem>
-                <MenuItem value="PASSPORT">Passeport</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Box>
-              <Button
-                component="label"
-                variant="outlined"
-                startIcon={<UploadFileIcon />}
-                fullWidth
-                sx={{ minHeight: 48 }}
-              >
-                Choisir CIN ou passeport
-                <input
-                  hidden
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setIdentityFile(file);
-                    event.target.value = "";
-                  }}
-                />
-              </Button>
-
-              <Typography
-                variant="body2"
-                color={identityFile ? "text.primary" : "text.secondary"}
-                sx={{ mt: 1, overflowWrap: "anywhere" }}
-              >
-                {identityFile
-                  ? `${identityFile.name} — ${(identityFile.size / 1024 / 1024).toFixed(2)} MB`
-                  : "Aucun document d'identité sélectionné"}
-              </Typography>
-            </Box>
-
-            <Box>
-              <Button
-                component="label"
-                variant="outlined"
-                startIcon={<UploadFileIcon />}
-                fullWidth
-                sx={{ minHeight: 48 }}
-              >
-                Choisir justificatif de domicile
-                <input
-                  hidden
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setAddressFile(file);
-                    event.target.value = "";
-                  }}
-                />
-              </Button>
-
-              <Typography
-                variant="body2"
-                color={addressFile ? "text.primary" : "text.secondary"}
-                sx={{ mt: 1, overflowWrap: "anywhere" }}
-              >
-                {addressFile
-                  ? `${addressFile.name} — ${(addressFile.size / 1024 / 1024).toFixed(2)} MB`
-                  : "Aucun justificatif sélectionné"}
-              </Typography>
-            </Box>
+            <Divider />
+            <strong>Documents simulés</strong>
 
             <Alert severity="info">
-              Formats acceptés : PDF, JPG et PNG. Taille maximale :
-              5 MB par document. Sur téléphone, vous pouvez sélectionner
-              un fichier depuis les fichiers ou photos disponibles.
+              Aucun fichier réel n'est envoyé. Seul le nom du document
+              est enregistré.
             </Alert>
-          </Stack>
+
+            {DOCUMENT_TYPES.map((documentType) => {
+              const document = formData.documents.find(
+                (item) => item.documentType === documentType,
+              );
+
+              return (
+                <TextField
+                  key={documentType}
+                  label={`${labelOf(documentType)} — nom du fichier`}
+                  placeholder="exemple.pdf"
+                  value={document?.fileName || ""}
+                  onChange={(event) =>
+                    updateDocumentName(
+                      documentType,
+                      event.target.value,
+                    )
+                  }
+                  slotProps={{
+                    htmlInput: {
+                      maxLength: 255,
+                    },
+                  }}
+                  fullWidth
+                />
+              );
+            })}
+          </Box>
         </DialogContent>
 
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions>
           <Button
             onClick={() => setCreateOpen(false)}
             disabled={saving}
           >
             Annuler
           </Button>
-
           <Button
             variant="contained"
             onClick={() => void handleCreate()}
             disabled={saving}
           >
-            {saving ? "Création..." : "Créer la demande"}
+            {saving ? (
+              <CircularProgress size={22} />
+            ) : (
+              "Créer la demande"
+            )}
           </Button>
         </DialogActions>
       </Dialog>
@@ -877,219 +940,309 @@ export default function AccountRequests() {
           {selectedRequest ? ` #${selectedRequest.id}` : ""}
         </DialogTitle>
 
-        <DialogContent>
+        <DialogContent dividers>
           {!selectedRequest ? (
             <CircularProgress />
           ) : (
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Typography variant="h6" sx={{ mb: 1 }}>
-                  Informations générales
-                </Typography>
-
-                <Typography>
-                  <strong>Prospect :</strong>{" "}
-                  {getProspectName(selectedRequest)}
-                </Typography>
-
-                <Typography>
-                  <strong>Email :</strong>{" "}
-                  {selectedRequest.prospectEmail || "—"}
-                </Typography>
-
-                <Typography>
-                  <strong>ID prospect :</strong>{" "}
-                  {selectedRequest.prospectId}
-                </Typography>
-
-                <Typography>
-                  <strong>Type de compte :</strong>{" "}
-                  {formatLabel(selectedRequest.accountType)}
-                </Typography>
-
-                <Typography>
-                  <strong>Expérience :</strong>{" "}
-                  {formatLabel(selectedRequest.tradingExperience)}
-                </Typography>
-
-                <Typography>
-                  <strong>Dépôt initial :</strong>{" "}
-                  {Number(
-                    selectedRequest.initialDeposit
-                  ).toLocaleString()}
-                </Typography>
-
-                <Typography>
-                  <strong>Date de création :</strong>{" "}
-                  {formatDate(selectedRequest.createdAt)}
-                </Typography>
-
-                <Box sx={{ mt: 1 }}>
-                  <Chip
-                    size="small"
-                    label={formatLabel(selectedRequest.status)}
-                    color={getStatusColor(selectedRequest.status)}
-                  />
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+              }}
+            >
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 2,
+                  flexWrap: "wrap",
+                }}
+              >
+                <Box>
+                  <strong>Prospect</strong>
+                  <Box>{getProspectName(selectedRequest)}</Box>
+                  <Box color="text.secondary">
+                    {selectedRequest.prospectEmail || "—"}
+                  </Box>
                 </Box>
 
-                {selectedRequest.reviewComment && (
-                  <Typography sx={{ mt: 1 }}>
-                    <strong>Commentaire :</strong>{" "}
-                    {selectedRequest.reviewComment}
-                  </Typography>
-                )}
-              </Paper>
+                <Box>
+                  <strong>Statut actuel</strong>
+                  <Box sx={{ mt: 0.5 }}>
+                    <Chip
+                      label={labelOf(selectedRequest.status)}
+                      color={statusColor(selectedRequest.status)}
+                    />
+                  </Box>
+                </Box>
+              </Box>
 
-              <Typography variant="h6">Documents</Typography>
+              <Divider />
 
-              {selectedRequest.documents?.length ? (
-                selectedRequest.documents.map((document) => (
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: {
+                    xs: "1fr",
+                    sm: "1fr 1fr",
+                  },
+                  gap: 2,
+                }}
+              >
+                <Box>
+                  <strong>Type de compte</strong>
+                  <Box>{labelOf(selectedRequest.accountType)}</Box>
+                </Box>
+                <Box>
+                  <strong>Expérience</strong>
+                  <Box>
+                    {labelOf(selectedRequest.tradingExperience)}
+                  </Box>
+                </Box>
+                <Box>
+                  <strong>Dépôt initial</strong>
+                  <Box>
+                    {Number(
+                      selectedRequest.initialDeposit,
+                    ).toLocaleString("fr-FR")}
+                  </Box>
+                </Box>
+                <Box>
+                  <strong>Date de création</strong>
+                  <Box>{formatDate(selectedRequest.createdAt)}</Box>
+                </Box>
+                <Box>
+                  <strong>Date de mise à jour</strong>
+                  <Box>{formatDate(selectedRequest.updatedAt)}</Box>
+                </Box>
+                <Box>
+                  <strong>Date de revue</strong>
+                  <Box>{formatDate(selectedRequest.reviewedAt)}</Box>
+                </Box>
+              </Box>
+
+              <Divider />
+              <strong>Documents</strong>
+
+              {selectedDocuments.length === 0 ? (
+                <Alert severity="warning">
+                  Aucun document enregistré pour cette demande.
+                </Alert>
+              ) : (
+                selectedDocuments.map((document) => (
                   <Paper
                     key={document.id}
                     variant="outlined"
-                    sx={{ p: 2 }}
+                    sx={{
+                      p: 2,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 2,
+                      flexWrap: "wrap",
+                    }}
                   >
-                    <Stack
-                      direction={{ xs: "column", sm: "row" }}
-                      spacing={1}
-                      sx={{
-                        justifyContent: "space-between",
-                        alignItems: { xs: "stretch", sm: "center" },
-                      }}
-                    >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ fontWeight: 600 }}>
-                          {formatLabel(document.documentType)}
-                        </Typography>
-
-                        <Chip
-                          size="small"
-                          sx={{ mt: 1 }}
-                          label={
-                            document.verified ? "Vérifié" : "Non vérifié"
-                          }
-                          color={
-                            document.verified ? "success" : "default"
-                          }
-                        />
-                      </Box>
-
-                      <Stack
-                        direction={{ xs: "column", sm: "row" }}
-                        spacing={1}
-                      >
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<DownloadIcon />}
-                          onClick={() =>
-                            void handleDownloadDocument(
-                              selectedRequest.id,
-                              document.id,
-                              document.documentType
-                            )
-                          }
+                    <Box>
+                      <strong>
+                        {labelOf(document.documentType)}
+                      </strong>
+                      <Box>{document.fileName || "Nom indisponible"}</Box>
+                      <Chip
+                        size="small"
+                        label={
+                          document.verified
+                            ? "Vérifié"
+                            : "Non vérifié"
+                        }
+                        color={
+                          document.verified ? "success" : "warning"
+                        }
+                        sx={{ mt: 1 }}
+                      />
+                      {document.verifiedAt && (
+                        <Box
+                          sx={{
+                            color: "text.secondary",
+                            fontSize: 12,
+                            mt: 0.5,
+                          }}
                         >
-                          Télécharger
-                        </Button>
+                          Vérifié le {formatDate(document.verifiedAt)}
+                        </Box>
+                      )}
+                    </Box>
 
-                        {isManager &&
-                          !document.verified &&
-                          !isFinalStatus && (
-                            <Button
-                              variant="contained"
-                              size="small"
-                              disabled={saving}
-                              onClick={() =>
-                                void handleVerifyDocument(document.id)
-                              }
-                            >
-                              Vérifier
-                            </Button>
-                          )}
-                      </Stack>
-                    </Stack>
+                    {isManager && !document.verified && (
+                      <Button
+                        variant="outlined"
+                        disabled={actionLoading}
+                        onClick={() =>
+                          void handleVerifyDocument(document.id)
+                        }
+                      >
+                        Vérifier
+                      </Button>
+                    )}
                   </Paper>
                 ))
-              ) : (
-                <Alert severity="warning">
-                  Aucun document n'est associé à cette demande.
-                </Alert>
               )}
 
-              {isManager && !isFinalStatus && (
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="h6" sx={{ mb: 2 }}>
-                    Révision de la demande
-                  </Typography>
+              {isManager && (
+                <>
+                  <Divider />
+                  <strong>Revue de la demande</strong>
+
+                  <Alert
+                    severity={
+                      hasVerifiedIdentity && hasVerifiedAddress
+                        ? "success"
+                        : "warning"
+                    }
+                  >
+                    Pièce d'identité :{" "}
+                    {hasVerifiedIdentity ? "vérifiée" : "à vérifier"}
+                    {" — "}
+                    Justificatif de domicile :{" "}
+                    {hasVerifiedAddress ? "vérifié" : "à vérifier"}.
+                  </Alert>
+
+                  <FormControl fullWidth>
+                    <InputLabel id="next-status-label">
+                      Nouveau statut
+                    </InputLabel>
+                    <Select
+                      labelId="next-status-label"
+                      label="Nouveau statut"
+                      value={nextStatus}
+                      onChange={(event) =>
+                        setNextStatus(
+                          event.target.value as AccountRequestStatus,
+                        )
+                      }
+                    >
+                      {STATUS_OPTIONS.map((status) => (
+                        <MenuItem key={status} value={status}>
+                          {labelOf(status)}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
 
                   <TextField
-                    label="Commentaire de révision"
+                    label="Commentaire de revue"
+                    placeholder="Commentaire concernant la décision..."
                     value={reviewComment}
                     onChange={(event) =>
                       setReviewComment(event.target.value)
                     }
                     multiline
-                    minRows={2}
+                    rows={3}
                     fullWidth
-                    sx={{ mb: 2 }}
                   />
 
-                  <Stack
-                    direction={{ xs: "column", sm: "row" }}
-                    spacing={1}
+                  <Button
+                    variant="contained"
+                    onClick={() => void handleStatusChange()}
+                    disabled={actionLoading}
                   >
-                    <Button
-                      variant="outlined"
-                      disabled={saving}
-                      onClick={() =>
-                        void handleStatusChange("UNDER_REVIEW")
-                      }
-                    >
-                      Mettre en révision
-                    </Button>
+                    {actionLoading ? (
+                      <CircularProgress size={22} />
+                    ) : (
+                      "Enregistrer le statut"
+                    )}
+                  </Button>
 
-                    <Button
-                      variant="contained"
-                      color="success"
-                      disabled={saving || !canApprove}
-                      onClick={() =>
-                        void handleStatusChange("APPROVED")
-                      }
-                    >
-                      Approuver
-                    </Button>
+                  <Divider />
+                  <strong>Notes internes</strong>
 
-                    <Button
-                      variant="contained"
-                      color="error"
-                      disabled={saving}
-                      onClick={() =>
-                        void handleStatusChange("REJECTED")
-                      }
-                    >
-                      Rejeter
-                    </Button>
-                  </Stack>
-
-                  {!canApprove && (
-                    <Alert severity="info" sx={{ mt: 2 }}>
-                      Pour approuver, le document d'identité et le
-                      justificatif de domicile doivent être vérifiés.
-                    </Alert>
+                  {notesLoading ? (
+                    <Box sx={{ display: "flex", justifyContent: "center" }}>
+                      <CircularProgress size={24} />
+                    </Box>
+                  ) : notes.length === 0 ? (
+                    <Box color="text.secondary">
+                      Aucune note pour le moment.
+                    </Box>
+                  ) : (
+                    notes.map((note) => (
+                      <Paper
+                        key={note.id}
+                        variant="outlined"
+                        sx={{ p: 2 }}
+                      >
+                        <Box sx={{ whiteSpace: "pre-wrap" }}>
+                          {note.content}
+                        </Box>
+                        <Box
+                          sx={{
+                            mt: 1,
+                            color: "text.secondary",
+                            fontSize: 12,
+                          }}
+                        >
+                          {note.createdByEmail || "Manager"} —{" "}
+                          {formatDate(note.createdAt)}
+                        </Box>
+                      </Paper>
+                    ))
                   )}
-                </Paper>
+
+                  <TextField
+                    label="Ajouter une note interne"
+                    placeholder="Saisir une note..."
+                    value={noteContent}
+                    onChange={(event) =>
+                      setNoteContent(event.target.value)
+                    }
+                    multiline
+                    rows={3}
+                    slotProps={{
+                      htmlInput: {
+                        maxLength: 5000,
+                      },
+                    }}
+                    helperText={`${noteContent.length}/5000 caractères`}
+                    fullWidth
+                  />
+
+                  <Button
+                    variant="outlined"
+                    onClick={() => void handleAddNote()}
+                    disabled={noteSaving || !noteContent.trim()}
+                  >
+                    {noteSaving ? (
+                      <CircularProgress size={22} />
+                    ) : (
+                      "Ajouter la note"
+                    )}
+                  </Button>
+                </>
               )}
-            </Stack>
+
+              {!isManager && selectedRequest.reviewComment && (
+                <Box>
+                  <strong>Commentaire de revue</strong>
+                  <Box>{selectedRequest.reviewComment}</Box>
+                </Box>
+              )}
+            </Box>
           )}
         </DialogContent>
 
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions>
           <Button onClick={() => setDetailsOpen(false)}>
             Fermer
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={Boolean(success)}
+        autoHideDuration={4000}
+        onClose={() => setSuccess("")}
+        message={success}
+      />
     </Box>
   );
 }
