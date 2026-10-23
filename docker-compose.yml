@@ -1,54 +1,57 @@
-services:
 
-  db:
+services:
+  # ==========================================
+  # POSTGRESQL DATABASE
+  # ==========================================
+  postgres:
     image: postgres:15
     container_name: crm_postgres
-    restart: always
-
     environment:
+      POSTGRES_DB: crm_DB
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 123
-      POSTGRES_DB: crm_db
-
+      POSTGRES_PASSWORD: "123"
     ports:
       - "5432:5432"
-
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
-
+  # ==========================================
+  # SPRING BOOT BACKEND
+  # ==========================================
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     container_name: crm_backend
-    restart: always
-
     ports:
-      - "5000:5000"
-
+      - "8080:8080"
     depends_on:
-      - db
+      - postgres
+    restart: unless-stopped
 
-    environment:
-      PORT: 5000
-      DB_URL: postgres://postgres:123@db:5432/crm_db
-      JWT_SECRET: supersecret
-
-    volumes:
-      - ./database:/database
-      - ./backend/uploads:/app/uploads
-
-
+  # ==========================================
+  # REACT FRONTEND - HOT RELOAD
+  # ==========================================
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
     container_name: crm_frontend
-    restart: always
-
     ports:
-      - "5173:5173"
-
+      - "5174:5174"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    command: npm run dev -- --host 0.0.0.0 --port 5174
     depends_on:
       - backend
+    restart: unless-stopped
 
-
+# ==========================================
+# DATABASE VOLUME
+# ==========================================
 volumes:
-  pgdata:
+  postgres_data:
+    external: true
+    name: crm-brokrage_postgres_spring_data
