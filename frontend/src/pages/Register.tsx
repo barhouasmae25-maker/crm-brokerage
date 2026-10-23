@@ -1,109 +1,149 @@
 import { useState } from "react";
-import api from "../services/api";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { register } from "../services/auth.service";
 
-export default function Register() {
+function Register() {
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("AGENT");
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+
+  const [role, setRole] =
+    useState<"AGENT" | "MANAGER">("AGENT");
+
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const nav = useNavigate();
+  const handleRegister = async (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
+    e.preventDefault();
 
-  const handleRegister = async () => {
-    setLoading(true);
     setError("");
+    setLoading(true);
 
     try {
-      await api.post("/auth/register", {
+      const response = await register({
         email,
         password,
         role,
       });
 
-      nav("/login");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Registration failed");
+      localStorage.setItem("token", response.token);
+      localStorage.setItem("email", response.email);
+      localStorage.setItem("role", response.role);
+
+      navigate("/dashboard");
+
+    } catch (error) {
+
+      console.error(error);
+
+      setError("Registration failed");
+
     } finally {
+
       setLoading(false);
+
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 to-blue-200 px-4">
+    <div className="auth-container">
 
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8">
+      <div className="auth-card">
 
-        <h1 className="text-3xl font-bold text-center mb-2">
-          Create Account
-        </h1>
+        <h1>CRM Brokerage</h1>
 
-        <p className="text-center text-gray-500 mb-6">
-          CRM Brokerage Platform
-        </p>
+        <h2>Create Account</h2>
 
         {error && (
-          <div className="bg-red-100 text-red-600 p-3 rounded-lg mb-4 text-sm">
+          <div className="error-message">
             {error}
           </div>
         )}
 
-        <div className="space-y-4">
+        <form onSubmit={handleRegister}>
 
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
-          />
+          <div className="form-group">
 
-          <div className="relative">
+            <label>Email</label>
+
             <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border rounded-xl px-4 py-3 pr-12 focus:ring-2 focus:ring-blue-500"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email"
+              required
             />
 
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-3"
-            >
-              {showPassword ? "🙈" : "👁️"}
-            </button>
           </div>
 
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="w-full border rounded-xl px-4 py-3"
-          >
-            <option value="AGENT">AGENT</option>
-            <option value="MANAGER">MANAGER</option>
-          </select>
+          <div className="form-group">
+
+            <label>Password</label>
+
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              minLength={6}
+              required
+            />
+
+          </div>
+
+          <div className="form-group">
+
+            <label>Role</label>
+
+            <select
+              value={role}
+              onChange={(e) =>
+                setRole(
+                  e.target.value as
+                    | "AGENT"
+                    | "MANAGER"
+                )
+              }
+            >
+
+              <option value="AGENT">
+                AGENT
+              </option>
+
+              <option value="MANAGER">
+                MANAGER
+              </option>
+
+            </select>
+
+          </div>
 
           <button
-            onClick={handleRegister}
+            type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold"
           >
-            {loading ? "Creating..." : "Create Account"}
+            {loading ? "Création..." : "Register"}
           </button>
 
-          <p className="text-center text-sm">
-            Already have an account?{" "}
-            <Link className="text-blue-600 font-semibold" to="/login">
-              Login
-            </Link>
-          </p>
+        </form>
 
-        </div>
+        <p>
+          Already have an account?{" "}
+          <span
+            className="link"
+            onClick={() => navigate("/login")}
+          >
+            Login
+          </span>
+        </p>
+
       </div>
+
     </div>
   );
 }
+
+export default Register;

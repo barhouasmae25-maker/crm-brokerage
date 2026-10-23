@@ -1,13 +1,13 @@
-FROM node:20
+
+FROM maven:3.9.9-eclipse-temurin-21
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY pom.xml .
+COPY src src
 
-RUN npm install
+RUN mvn clean package -DskipTests
 
-COPY . .
+EXPOSE 8080
 
-EXPOSE 5000
-
-CMD ["sh", "-c", "npm run migrate && npm run dev"]
+CMD ["mvn", "spring-boot:run"]

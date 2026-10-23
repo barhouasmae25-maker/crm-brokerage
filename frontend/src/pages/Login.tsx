@@ -1,102 +1,114 @@
 import { useState } from "react";
-import api from "../services/api";
-import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
+import { login } from "../services/auth.service";
 
-export default function Login() {
+function Login() {
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const { login } = useAuth();
-  const nav = useNavigate();
+  const handleLogin = async (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
+    e.preventDefault();
 
-  const handleLogin = async () => {
-    setLoading(true);
     setError("");
+    setLoading(true);
 
     try {
-      const res = await api.post("/auth/login", {
+      const response = await login({
         email,
         password,
       });
 
-      login(res.data.token, res.data.user);
+      // Save authentication information
+      localStorage.setItem("token", response.token);
+      localStorage.setItem("email", response.email);
+      localStorage.setItem("role", response.role);
 
-      nav("/dashboard");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Login failed");
+      // Redirect to dashboard
+      navigate("/dashboard");
+    } catch (error) {
+      console.error(error);
+
+      setError("Email ou password incorrect");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-indigo-200 px-4">
+    <div className="auth-container">
 
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8">
+      <div className="auth-card">
 
-        <h1 className="text-3xl font-bold text-center mb-2">
-          Welcome Back
-        </h1>
+        <h1>CRM Brokerage</h1>
 
-        <p className="text-center text-gray-500 mb-6">
-          Login to your CRM account
-        </p>
+        <h2>Login</h2>
 
         {error && (
-          <div className="bg-red-100 text-red-600 p-3 rounded-lg mb-4 text-sm">
+          <div className="error-message">
             {error}
           </div>
         )}
 
-        <div className="space-y-4">
+        <form onSubmit={handleLogin}>
 
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
-          />
+          <div className="form-group">
 
-          <div className="relative">
+            <label>Email</label>
+
             <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border rounded-xl px-4 py-3 pr-12 focus:ring-2 focus:ring-blue-500"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email"
+              required
             />
 
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-3"
-            >
-              {showPassword ? "🙈" : "👁️"}
-            </button>
+          </div>
+
+          <div className="form-group">
+
+            <label>Password</label>
+
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              required
+            />
+
           </div>
 
           <button
-            onClick={handleLogin}
+            type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold"
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Connexion..." : "Login"}
           </button>
 
-          <p className="text-center text-sm">
-            Don't have an account?{" "}
-            <Link className="text-blue-600 font-semibold" to="/register">
-              Register
-            </Link>
-          </p>
+        </form>
 
-        </div>
+        <p>
+          Don't have an account?{" "}
+          <span
+            className="link"
+            onClick={() => navigate("/register")}
+          >
+            Register
+          </span>
+        </p>
+
       </div>
+
     </div>
   );
 }
+
+export default Login;
